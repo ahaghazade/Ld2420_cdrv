@@ -25,12 +25,19 @@
 /* Private typedef -----------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
 /* Private function prototypes -----------------------------------------------*/
-void fWs2813_FullColor(CRGB Color, int LedNums, CRGB leds[]);
-void fWs2813_LinearColorFill(CRGB Color, int LedNums, CRGB leds[]);
-void fWs2813_LinearColorWithErase(CRGB Color, int LedNums, bool CW, CRGB leds[]);
-void fWs2813_BlinkColor(CRGB Color, int LedNums, uint32_t delay_ms, int replication, CRGB leds[]);
-void fWs2813_BlinkColorSmooth(CRGB Color, int LedNums, int replication, int Smooth, CRGB leds[]);
-void fWs2813_Fancy(CRGB Color, int LedNums, CRGB leds[]);
+static ld2420_res_t fLd2420_CompareArrays(uint8_t *a, uint8_t *b, size_t len, size_t *ignoreIndices = nullptr, size_t ignoreCount = 0);
+static ld2420_res_t fLd2420_ReadResponse(uint8_t *expected, size_t len, size_t *ignoreIndices = nullptr, size_t ignoreCount = 0, unsigned long timeout = LD2420_RESPONOSE_TIMOUT_MS);
+static void fLd2420_SendCommand(uint8_t *cmd, size_t len);
+static ld2420_res_t fLd2420_SendAndReadCommand(uint8_t *cmd, size_t cmdLen, uint8_t *expected, size_t respLen, size_t *ignoreIndices = nullptr, size_t ignoreCount = 0, int request_try = LD2420_REQUEST_RETRY);
+static ld2420_res_t fLd2420_EnterCMDMode();
+static ld2420_res_t fLd2420_ExitCMDMode();
+static ld2420_res_t fLd2420_SetThresh(uint16_t add, uint16_t value, bool up);
+static int fLd2420_ReadThresh(uint16_t add , bool up, int request_retry = LD2420_REQUEST_RETRY , int request_timeout = LD2420_RESPONOSE_TIMOUT_MS);
+static ld2420_res_t fLd2420_SetMaxDistance(uint16_t distance);
+static ld2420_res_t fLd2420_SetReportDelay(uint16_t delay);
+static int fLd2420_ReadMaxDistance(int request_retry = LD2420_REQUEST_RETRY , int request_timeout = LD2420_RESPONOSE_TIMOUT_MS);
+static int fLd2420_ReadReportDelay(int request_retry = LD2420_REQUEST_RETRY , int request_timeout = LD2420_RESPONOSE_TIMOUT_MS);
+static ld2420_res_t fLd2420_InitialABDThresh();
 
 /* Variables -----------------------------------------------------------------*/
 static uint8_t enterCmd[] = {0xFD, 0xFC, 0xFB, 0xFA, 0x04, 0x00, 0xFF, 0x00, 0x01, 0x00, 0x04, 0x03, 0x02, 0x01};
@@ -57,24 +64,97 @@ static uint16_t lowerThreshValues[16] = {40000, 20000, 10000, 500, 300, 200, 200
 ║                          ##### Exported Functions #####                         ║
 ╚═════════════════════════════════════════════════════════════════════════════════╝*/
 
-bool compareArrays(uint8_t *a, uint8_t *b, size_t len, size_t *ignoreIndices, size_t ignoreCount) {
+ld2420_res_t fLd2420_Init() {
 
-  for (size_t i = 0; i < len; i++) {
+  return fLd2420_InitialABDThresh();
+}
+
+
+ld2420_res_t fLd2420_ConfigABDParams(uint8_t config, int value) {
+
+  bool ConfigSuccess = false;
+  //Enter Command Mode
+  Serial.println("\n>>> Sending Enter Command Mode...");
+  if(fLd2420_EnterCMDMode() == LD2420_RES_OK) {
+
+    Serial.println(":::: Enter Command Mode successful");
+    switch (config)
+    {
+      //
+      case 0: //set min dis
+        Serial.println(":::: Set min distance successful");
+        break;
+      
+      case 1: //set max dis
+        if (fLd2420_SetMaxDistance(value)) 
+        {
+          Serial.println(":::: Set max distance successful");
+          //Read Max Distance
+          Serial.println("\n>>> Sending Read Max Distance...");
+          int returnedValue = fLd2420_ReadMaxDistance();
+          if(returnedValue == value)
+            ConfigSuccess = true;
+        } 
+        else 
+          Serial.println("Set Max Distance failed");
+
+        break;
+      
+      case 2: //set time
+      if(fLd2420_SetReportDelay(value))
+      {
+        Serial.println(":::: Set report delay successful");
+        Serial.println("\n>>> Sending Read report delay...");
+        int returnedValue = fLd2420_ReadReportDelay();
+        if(returnedValue == value)
+          ConfigSuccess = true;
+      }
+      else
+        Serial.println("Set report delay failed");
+        
+        break;
+
+    }
+    Serial.println("\nSending Exit Command Mode...");
+    if(fLd2420_ExitCMDMode() == LD2420_RES_OK) 
+      Serial.println(":::: Exit Command Mode successful");
+    else 
+      Serial.println("Exit Command Mode failed after retries");
+  }
+
+  if(!ConfigSuccess) {
+    return LD2420_RES_CONFIG_ABB_PARAM_FAIL;
+  }
+  return LD2420_RES_OK;
+}
+
+/*
+╔═════════════════════════════════════════════════════════════════════════════════╗
+║                            ##### Private Functions #####                        ║
+╚═════════════════════════════════════════════════════════════════════════════════╝*/
+
+
+static ld2420_res_t fLd2420_CompareArrays(uint8_t *a, uint8_t *b, size_t len, size_t *ignoreIndices, size_t ignoreCount) {
+
+  for(size_t i = 0; i < len; i++) {
+
     bool ignore = false;
-    for (size_t j = 0; j < ignoreCount; j++) {
-      if (i == ignoreIndices[j]) {
+    for(size_t j = 0; j < ignoreCount; j++) {
+    
+      if(i == ignoreIndices[j]) {
+
         ignore = true;
         break;
       }
     }
-    if (!ignore && a[i] != b[i]) {
-      return false;
+    if(!ignore && a[i] != b[i]) {
+      return LD2420_RES_COMPARE_ARRAYS_NOT_EQUAL;
     }
   }
-  return true;
+  return LD2420_RES_OK;
 }
 
-bool readResponse(uint8_t *expected, size_t len, size_t *ignoreIndices, size_t ignoreCount, unsigned long timeout) {
+static ld2420_res_t fLd2420_ReadResponse(uint8_t *expected, size_t len, size_t *ignoreIndices, size_t ignoreCount, unsigned long timeout) {
   
   uint8_t buffer[32];
   size_t index = 0;
@@ -83,13 +163,18 @@ bool readResponse(uint8_t *expected, size_t len, size_t *ignoreIndices, size_t i
   uint8_t header[2] = {0xFD, 0xFC};
 
   // Wait for FD FC header
-  while (millis() - start < timeout) {
-    if (Serial1.available()) {
+  while(millis() - start < timeout) {
+
+    if(Serial1.available()) {
+    
       uint8_t byte = Serial1.read();
-      if (!headerFound) {
-        if (byte == header[index]) {
+      if(!headerFound) {
+    
+        if(byte == header[index]) {
+    
           index++;
-          if (index == 2) { // Full header FD FC received
+          if(index == 2) { // Full header FD FC received
+    
             headerFound = true;
             index = 0;
             buffer[0] = header[0];
@@ -99,7 +184,7 @@ bool readResponse(uint8_t *expected, size_t len, size_t *ignoreIndices, size_t i
         } else {
           index = 0; // Reset if header sequence breaks
         }
-      } else if (index < len) {
+      } else if(index < len) {
         buffer[index++] = byte;
       }
       if (index == len) {
@@ -108,61 +193,59 @@ bool readResponse(uint8_t *expected, size_t len, size_t *ignoreIndices, size_t i
     }
   }
 
-  // Serial.println("\nresponse buffer:");
-  // for (int i = 0; i < index; i++) {
-  //   Serial.print(buffer[i], HEX);
-  //   Serial.print(" ");
-  // }
-  // Serial.println();
+  if(index != len) {
 
-  if (index != len) {
     Serial.print("Response length mismatch: expected ");
     Serial.print(len);
     Serial.print(", got ");
     Serial.println(index);
-    return false;
+    return LD2420_RES_READ_RESPONSE_FAIL;
   }
 
-  return compareArrays(buffer, expected, len, ignoreIndices, ignoreCount);
+  return fLd2420_CompareArrays(buffer, expected, len, ignoreIndices, ignoreCount);
 }
 
-void sendCommand(uint8_t *cmd, size_t len) {
+static void fLd2420_SendCommand(uint8_t *cmd, size_t len) {
   Serial1.write(cmd, len);
 }
 
-bool sendAndReadCommand(uint8_t *cmd, size_t cmdLen, uint8_t *expected, size_t respLen, size_t *ignoreIndices, size_t ignoreCount, int request_try) {
+static ld2420_res_t fLd2420_SendAndReadCommand(uint8_t *cmd, size_t cmdLen, uint8_t *expected, size_t respLen, size_t *ignoreIndices, size_t ignoreCount, int request_try) {
+
   for (int retry = 0; retry < request_try; retry++) {
-    sendCommand(cmd, cmdLen);
-    if (readResponse(expected, respLen, ignoreIndices, ignoreCount)) {
-      return true;
+
+    fLd2420_SendCommand(cmd, cmdLen);
+    if (fLd2420_ReadResponse(expected, respLen, ignoreIndices, ignoreCount) == LD2420_RES_OK) {
+      return LD2420_RES_OK;
     }
     Serial.print("Retry ");
     Serial.print(retry + 1);
     Serial.println(" for command...");
     delay(100); // Short delay between retries
   }
-  return false;
+  return LD2420_RES_SEND_AND_READ_FAIL;
 }
 
-bool EnterCMDMode()
-{
+static ld2420_res_t fLd2420_EnterCMDMode() {
+
   size_t ignoreIndices[] = {12, 13}; // Ignore bytes 12-13 in enterResp
-  if (sendAndReadCommand(enterCmd, sizeof(enterCmd), enterResp, sizeof(enterResp), ignoreIndices, sizeof(ignoreIndices), reqTry)) 
-    return true;
-  else 
-    return false;
+  if (fLd2420_SendAndReadCommand(enterCmd, sizeof(enterCmd), enterResp, sizeof(enterResp), ignoreIndices, sizeof(ignoreIndices)) != LD2420_RES_OK) {
+    return LD2420_RES_ENTER_CMD_MODE_FAIL;
+  }else { 
+    return LD2420_RES_OK;
+  }
 }
 
-bool ExitCMDMode()
-{
-  if(sendAndReadCommand(exitCmd, sizeof(exitCmd), exitResp, sizeof(exitResp)))
-  return true;
-  else 
+static ld2420_res_t fLd2420_ExitCMDMode() {
+
+  if(fLd2420_SendAndReadCommand(exitCmd, sizeof(exitCmd), exitResp, sizeof(exitResp)) != LD2420_RES_OK) {
+  return LD2420_RES_EXIT_CMD_MODE_FAIL;
+  } else { 
     return false;
+  }
 }
 
-bool SetThresh(uint16_t add, uint16_t value, bool up)
-{
+static ld2420_res_t fLd2420_SetThresh(uint16_t add, uint16_t value, bool up) {
+
   if(up) add += 16; // 0x10 first add of upper thresh add
   else add += 32;   // 0x20 first add of lower thresh add
 
@@ -172,14 +255,15 @@ bool SetThresh(uint16_t add, uint16_t value, bool up)
   setThreshCmd[10] = value & 0xFF;        // Low byte
   setThreshCmd[11] = (value >> 8) & 0xFF; // High byte
 
-  if(sendAndReadCommand(setThreshCmd, sizeof(setThreshCmd), setABDResp, sizeof(setABDResp), nullptr, 0, reqTry))
-    return true;
-  else 
-    return false;
+  if(fLd2420_SendAndReadCommand(setThreshCmd, sizeof(setThreshCmd), setABDResp, sizeof(setABDResp), nullptr, 0) != LD2420_RES_OK) {
+    return LD2420_RES_SET_TRESH_VALUE_FAIL;
+  }else { 
+    return LD2420_RES_OK;
+  }
 }
 
-int ReadThresh(uint16_t add, bool up, int request_retry , int request_timeout)
-{
+static int fLd2420_ReadThresh(uint16_t add, bool up, int request_retry , int request_timeout) {
+
   uint8_t response[32]; //{0xFD, 0xFC, 0xFB, 0xFA, 0x08, 0x00, 0x08, 0x01, 0x00, 0x00, 0x60, 0xEA, 0x00, 0x00, 0x04, 0x03, 0x02, 0x01};
 
   if(up) add += 16; // 0x10 first add of upper thresh add
@@ -191,7 +275,7 @@ int ReadThresh(uint16_t add, bool up, int request_retry , int request_timeout)
   size_t index = 0;
   for (int retry = 0; retry < request_retry; retry++) 
   {
-    sendCommand(readThreshCmd, sizeof(readThreshCmd));
+    fLd2420_SendCommand(readThreshCmd, sizeof(readThreshCmd));
     index = 0;
     unsigned long start = millis();
     bool headerFound = false;
@@ -219,14 +303,8 @@ int ReadThresh(uint16_t add, bool up, int request_retry , int request_timeout)
       }
     }
 
-    // Serial.printf("\nread thresh response: index: %d, desired size: %d\n", index, sizeof(readThreshResp));
-    // for (int i = 0; i < index; i++) {
-    //   Serial.print(response[i], HEX);
-    //   Serial.print(" ");
-    // }
-    // Serial.println();
     size_t ignoreIndices[] = {10, 11, 12, 13}; //distance values 4 byte
-    if (index == sizeof(readThreshResp) && compareArrays(response, readThreshResp, sizeof(readThreshResp), ignoreIndices, sizeof(ignoreIndices))) {
+    if (index == sizeof(readThreshResp) && fLd2420_CompareArrays(response, readThreshResp, sizeof(readThreshResp), ignoreIndices, sizeof(ignoreIndices))) {
       // Check success/failure (bytes 8-9: 00 00 for success)
       if (response[8] == 0x00 && response[9] == 0x00) {
         Serial.println("Operation successful");
@@ -256,8 +334,8 @@ int ReadThresh(uint16_t add, bool up, int request_retry , int request_timeout)
   }
 } 
 
-bool setMaxDistance(uint16_t distance) 
-{
+static ld2420_res_t fLd2420_SetMaxDistance(uint16_t distance) {
+
   // Set add in little-endian (bytes 10-11) 
   setMaxDisCmd[10] = distance & 0xFF;        // Low byte
   setMaxDisCmd[11] = (distance >> 8) & 0xFF; // High byte
@@ -267,14 +345,15 @@ bool setMaxDistance(uint16_t distance)
   Serial.print(distance);
   Serial.println(" meters)...");
 
-  if(sendAndReadCommand(setMaxDisCmd, sizeof(setMaxDisCmd), setABDResp, sizeof(setABDResp), nullptr, 0, reqTry))
-    return true;
-  else 
-    return false;
+  if(fLd2420_SendAndReadCommand(setMaxDisCmd, sizeof(setMaxDisCmd), setABDResp, sizeof(setABDResp), nullptr, 0) != LD2420_RES_OK) {
+    return LD2420_RES_SET_MAX_DISTANCE_FAIL;
+  }else { 
+    return LD2420_RES_OK;
+  }
 }
 
-bool setReportDelay(uint16_t delay) 
-{  
+static ld2420_res_t fLd2420_SetReportDelay(uint16_t delay) {  
+
   // Set distance in little-endian (bytes 10-11)
   setDelayCmd[22] = delay & 0xFF;        // Low byte
   setDelayCmd[23] = (delay >> 8) & 0xFF; // High byte
@@ -284,19 +363,20 @@ bool setReportDelay(uint16_t delay)
   Serial.print(delay);
   Serial.println(" seconds)...");
 
-  if(sendAndReadCommand(setDelayCmd, sizeof(setDelayCmd), setDelayResp, sizeof(setDelayResp), nullptr, 0, reqTry))
-    return true;
-  else 
-    return false;
+  if(fLd2420_SendAndReadCommand(setDelayCmd, sizeof(setDelayCmd), setDelayResp, sizeof(setDelayResp), nullptr, 0) != LD2420_RES_OK) {
+    return LD2420_RES_SET_REPORT_DELAY_FAIL;
+  }else { 
+    return LD2420_RES_OK;
+  }
 }
 
-int ReadMaxDistance(int request_retry , int request_timeout)
-{
+static int fLd2420_ReadMaxDistance(int request_retry , int request_timeout) {
+
   uint8_t response[32];
   size_t index = 0;
   for (int retry = 0; retry < request_retry; retry++) 
   {
-    sendCommand(readMaxDisCmd, sizeof(readMaxDisCmd));
+    fLd2420_SendCommand(readMaxDisCmd, sizeof(readMaxDisCmd));
     index = 0;
     unsigned long start = millis();
     bool headerFound = false;
@@ -324,14 +404,8 @@ int ReadMaxDistance(int request_retry , int request_timeout)
       }
     }
 
-    // Serial.printf("\nread dis response: index: %d, desired size: %d\n", index, sizeof(readMaxDisResp));
-    // for (int i = 0; i < index; i++) {
-    //   Serial.print(response[i], HEX);
-    //   Serial.print(" ");
-    // }
-    // Serial.println();
     size_t ignoreIndices[] = {10, 11, 12, 13}; //distance values 4 byte
-    if (index == sizeof(readMaxDisResp) && compareArrays(response, readMaxDisResp, sizeof(readMaxDisResp), ignoreIndices, sizeof(ignoreIndices))) {
+    if (index == sizeof(readMaxDisResp) && fLd2420_CompareArrays(response, readMaxDisResp, sizeof(readMaxDisResp), ignoreIndices, sizeof(ignoreIndices))) {
       // Check success/failure (bytes 8-9: 00 00 for success)
       if (response[8] == 0x00 && response[9] == 0x00) {
         Serial.println("Operation successful");
@@ -362,13 +436,13 @@ int ReadMaxDistance(int request_retry , int request_timeout)
   }
 } 
 
-int ReadReportDelay(int request_retry , int request_timeout)
-{
+static int fLd2420_ReadReportDelay(int request_retry , int request_timeout) {
+
   uint8_t response[32];
   size_t index = 0;
   for (int retry = 0; retry < request_retry; retry++) 
   {
-    sendCommand(readDelayCmd, sizeof(readDelayCmd));
+    fLd2420_SendCommand(readDelayCmd, sizeof(readDelayCmd));
     index = 0;
     unsigned long start = millis();
     bool headerFound = false;
@@ -396,14 +470,8 @@ int ReadReportDelay(int request_retry , int request_timeout)
       }
     }
 
-    // Serial.printf("\nread delay response: index: %d, desired size: %d\n", index, sizeof(readDelayResp));
-    // for (int i = 0; i < index; i++) {
-    //   Serial.print(response[i], HEX);
-    //   Serial.print(" ");
-    // }
-    // Serial.println();
     size_t ignoreIndices[] = {18, 19, 20, 21}; //report delay 4 byte
-    if (index == sizeof(readDelayResp) && compareArrays(response, readDelayResp, sizeof(readDelayResp), ignoreIndices, sizeof(ignoreIndices))) {
+    if (index == sizeof(readDelayResp) && fLd2420_CompareArrays(response, readDelayResp, sizeof(readDelayResp), ignoreIndices, sizeof(ignoreIndices))) {
       // Check success/failure (bytes 8-9: 00 00 for success)
       if (response[8] == 0x00 && response[9] == 0x00) {
         Serial.println("Operation successful");
@@ -434,11 +502,11 @@ int ReadReportDelay(int request_retry , int request_timeout)
   }
 }
 
-bool InitialABDThresh()
-{
+static ld2420_res_t fLd2420_InitialABDThresh() {
+
   bool ConfigSuccess = true;
   Serial.println("\n>>> Sending Enter Command Mode...");
-  if(EnterCMDMode()) 
+  if(fLd2420_EnterCMDMode()) 
   {
     Serial.println(":::: Enter Command Mode successful");
   }
@@ -446,12 +514,12 @@ bool InitialABDThresh()
   for(int i = 0 ; i < 16 ; i++)
   {
     //Setting upper thresh
-    if (SetThresh(i, upperThreshValues[i] , 1)) 
+    if (fLd2420_SetThresh(i, upperThreshValues[i] , 1)) 
     {
       Serial.printf("\n:::: Set upper thresh[%d] value(%u) successful\n", i, upperThreshValues[i]);
       //Read Max Distance
       Serial.println("\n>>> Sending Read Thresh...");
-      uint16_t returnedValue = ReadThresh(i, 1, 3, 1000);
+      uint16_t returnedValue = fLd2420_ReadThresh(i, 1, 3, 1000);
       Serial.printf("Readed Value = %d\n", returnedValue);
       if(returnedValue =! upperThreshValues[i])
         ConfigSuccess = false;
@@ -461,12 +529,12 @@ bool InitialABDThresh()
     else 
       Serial.printf("Setting upper Thresh[%d] failed\n", i);
     //Setting lower thresh
-    if (SetThresh(i, lowerThreshValues[i] , 0)) 
+    if (fLd2420_SetThresh(i, lowerThreshValues[i] , 0)) 
     {
       Serial.printf("\n:::: Set upper thresh[%d] value(%u) successful\n", i, lowerThreshValues[i]);
       //Read Max Distance
       Serial.println("\n>>> Sending Read Thresh...");
-      uint16_t returnedValue = ReadThresh(i, 1, 3, 1000);
+      uint16_t returnedValue = fLd2420_ReadThresh(i, 1, 3, 1000);
       Serial.printf("Readed Value = %d\n", returnedValue);
       if(returnedValue =! lowerThreshValues[i])
         ConfigSuccess = false;
@@ -478,75 +546,14 @@ bool InitialABDThresh()
   }
   
   Serial.println("\nSending Exit Command Mode...");
-  if(ExitCMDMode()) {
+  if(fLd2420_ExitCMDMode()) {
     Serial.println(":::: Exit Command Mode successful");
-    return 1;
+    return LD2420_RES_OK;
   } else {
     Serial.println("Exit Command Mode failed after retries");
-    return ConfigSuccess;
+    return LD2420_RES_CONFIG_ABB_PARAM_FAIL;
   }
 }
-
-bool ConfigABDParams(uint8_t config, int value)
-{
-  bool ConfigSuccess = false;
-  //Enter Command Mode
-  Serial.println("\n>>> Sending Enter Command Mode...");
-  if(EnterCMDMode()) 
-  {
-    Serial.println(":::: Enter Command Mode successful");
-    switch (config)
-    {
-      //
-      case 0: //set min dis
-        Serial.println(":::: Set min distance successful");
-        break;
-      
-      case 1: //set max dis
-        if (setMaxDistance(value)) 
-        {
-          Serial.println(":::: Set max distance successful");
-          //Read Max Distance
-          Serial.println("\n>>> Sending Read Max Distance...");
-          int returnedValue = ReadMaxDistance();
-          if(returnedValue == value)
-            ConfigSuccess = true;
-        } 
-        else 
-          Serial.println("Set Max Distance failed");
-
-        break;
-      
-      case 2: //set time
-      if(setReportDelay(value))
-      {
-        Serial.println(":::: Set report delay successful");
-        Serial.println("\n>>> Sending Read report delay...");
-        int returnedValue = ReadReportDelay();
-        if(returnedValue == value)
-          ConfigSuccess = true;
-      }
-      else
-        Serial.println("Set report delay failed");
-        
-        break;
-
-    }
-    Serial.println("\nSending Exit Command Mode...");
-    if(ExitCMDMode()) 
-      Serial.println(":::: Exit Command Mode successful");
-    else 
-      Serial.println("Exit Command Mode failed after retries");
-  }
-  return ConfigSuccess;
-}
-
-
-/*
-╔═════════════════════════════════════════════════════════════════════════════════╗
-║                            ##### Private Functions #####                        ║
-╚═════════════════════════════════════════════════════════════════════════════════╝*/
-
 
 /**End of Group_Name
   * @}

@@ -31,7 +31,8 @@ extern "C" {
 #endif
 
 /* Exported defines ----------------------------------------------------------*/
-#define ResponseTimeout 1000
+#define LD2420_RESPONOSE_TIMOUT_MS 1000
+#define LD2420_REQUEST_RETRY       3
 
 /**
  * @brief Return codes for WS2812 operations
@@ -41,6 +42,15 @@ typedef uint8_t ld2420_res_t;
 
 #define LD2420_RES_OK                           ((uint8_t)0)
 #define LD2420_RES_ERROR_INIT_FAIL              ((uint8_t)1)
+#define LD2420_RES_COMPARE_ARRAYS_NOT_EQUAL     ((uint8_t)2)
+#define LD2420_RES_READ_RESPONSE_FAIL           ((uint8_t)3)
+#define LD2420_RES_SEND_AND_READ_FAIL           ((uint8_t)4)
+#define LD2420_RES_ENTER_CMD_MODE_FAIL          ((uint8_t)5)
+#define LD2420_RES_EXIT_CMD_MODE_FAIL           ((uint8_t)6)
+#define LD2420_RES_SET_TRESH_VALUE_FAIL         ((uint8_t)7)
+#define LD2420_RES_SET_MAX_DISTANCE_FAIL        ((uint8_t)8)
+#define LD2420_RES_SET_REPORT_DELAY_FAIL        ((uint8_t)9)
+#define LD2420_RES_CONFIG_ABB_PARAM_FAIL        ((uint8_t)10)
 
 /* Exported macro ------------------------------------------------------------*/
 /* Exported types ------------------------------------------------------------*/
@@ -70,40 +80,10 @@ typedef struct {
 
 /* Exported constants --------------------------------------------------------*/
 /* Exported functions prototypes ---------------------------------------------*/
-static ld2420_res_t fLd2420_Init();
-static ld2420_res_t fLd2420_CompareArrays(uint8_t *a, uint8_t *b, size_t len, size_t *ignoreIndices = nullptr, size_t ignoreCount = 0);
-static ld2420_res_t fLd2420_ReadResponse(uint8_t *expected, size_t len, size_t *ignoreIndices = nullptr, size_t ignoreCount = 0, unsigned long timeout = 1000);
-static void fLd2420_SendCommand(uint8_t *cmd, size_t len);
-static ld2420_res_t fLd2420_SendAndReadCommand(uint8_t *cmd, size_t cmdLen, uint8_t *expected, size_t respLen, size_t *ignoreIndices = nullptr, size_t ignoreCount = 0, int request_try = 3);
-static ld2420_res_t fLd2420_EnterCMDMode();
-static ld2420_res_t fLd2420_ExitCMDMode();
-static ld2420_res_t fLd2420_SetMaxDistance(uint16_t distance);
-static ld2420_res_t fLd2420_SetReportDelay(uint16_t delay);
-static int fLd2420_ReadMaxDistance(int request_retry = 3 , int request_timeout = 1000);
-static int fLd2420_ReadReportDelay(int request_retry = 3 , int request_timeout = 1000);
-static ld2420_res_t fLd2420_ConfigABDParams(uint8_t config, int value);
-static ld2420_res_t fLd2420_InitialABDThresh();
-static ld2420_res_t fLd2420_SetThresh(uint16_t add, uint16_t value, bool up);
-static int fLd2420_ReadThresh(uint16_t add , bool up, int request_retry = 3 , int request_timeout = 1000);
+ld2420_res_t fLd2420_Init();
+ld2420_res_t fLd2420_ConfigABDParams(uint8_t config, int value);
 
 /* Exported variables --------------------------------------------------------*/
-extern uint8_t enterCmd[];
-extern uint8_t enterResp[];
-extern uint8_t setMaxDisCmd[];
-extern uint8_t setABDResp[];
-extern uint8_t readMaxDisCmd[];
-extern uint8_t readMaxDisResp[];
-extern uint8_t exitCmd[];
-extern uint8_t exitResp[];
-extern uint8_t setDelayCmd[];
-extern uint8_t setDelayResp[];
-extern uint8_t readDelayCmd[];
-extern uint8_t readDelayResp[];
-extern uint8_t setThreshCmd[];
-extern uint8_t readThreshCmd[];
-extern uint8_t readThreshResp[];
-extern uint16_t upperThreshValues[];
-extern uint16_t lowerThreshValues[];
 
 #ifdef __cplusplus
 }
