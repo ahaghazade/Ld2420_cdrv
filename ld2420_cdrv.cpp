@@ -86,7 +86,7 @@ ld2420_res_t fLd2420_ConfigABDParams(uint8_t config, int value) {
         break;
       
       case 1: //set max dis
-        if (fLd2420_SetMaxDistance(value)) 
+        if (fLd2420_SetMaxDistance(value) == LD2420_RES_OK) 
         {
           Serial.println(":::: Set max distance successful");
           //Read Max Distance
@@ -101,7 +101,7 @@ ld2420_res_t fLd2420_ConfigABDParams(uint8_t config, int value) {
         break;
       
       case 2: //set time
-      if(fLd2420_SetReportDelay(value))
+      if(fLd2420_SetReportDelay(value) == LD2420_RES_OK)
       {
         Serial.println(":::: Set report delay successful");
         Serial.println("\n>>> Sending Read report delay...");
@@ -304,7 +304,7 @@ static int fLd2420_ReadThresh(uint16_t add, bool up, int request_retry , int req
     }
 
     size_t ignoreIndices[] = {10, 11, 12, 13}; //distance values 4 byte
-    if (index == sizeof(readThreshResp) && fLd2420_CompareArrays(response, readThreshResp, sizeof(readThreshResp), ignoreIndices, sizeof(ignoreIndices))) {
+    if (index == sizeof(readThreshResp) && (fLd2420_CompareArrays(response, readThreshResp, sizeof(readThreshResp), ignoreIndices, sizeof(ignoreIndices)) == LD2420_RES_OK)) {
       // Check success/failure (bytes 8-9: 00 00 for success)
       if (response[8] == 0x00 && response[9] == 0x00) {
         Serial.println("Operation successful");
@@ -405,7 +405,7 @@ static int fLd2420_ReadMaxDistance(int request_retry , int request_timeout) {
     }
 
     size_t ignoreIndices[] = {10, 11, 12, 13}; //distance values 4 byte
-    if (index == sizeof(readMaxDisResp) && fLd2420_CompareArrays(response, readMaxDisResp, sizeof(readMaxDisResp), ignoreIndices, sizeof(ignoreIndices))) {
+    if (index == sizeof(readMaxDisResp) && (fLd2420_CompareArrays(response, readMaxDisResp, sizeof(readMaxDisResp), ignoreIndices, sizeof(ignoreIndices)) == LD2420_RES_OK)) {
       // Check success/failure (bytes 8-9: 00 00 for success)
       if (response[8] == 0x00 && response[9] == 0x00) {
         Serial.println("Operation successful");
@@ -471,7 +471,7 @@ static int fLd2420_ReadReportDelay(int request_retry , int request_timeout) {
     }
 
     size_t ignoreIndices[] = {18, 19, 20, 21}; //report delay 4 byte
-    if (index == sizeof(readDelayResp) && fLd2420_CompareArrays(response, readDelayResp, sizeof(readDelayResp), ignoreIndices, sizeof(ignoreIndices))) {
+    if (index == sizeof(readDelayResp) && (fLd2420_CompareArrays(response, readDelayResp, sizeof(readDelayResp), ignoreIndices, sizeof(ignoreIndices)) == LD2420_RES_OK)) {
       // Check success/failure (bytes 8-9: 00 00 for success)
       if (response[8] == 0x00 && response[9] == 0x00) {
         Serial.println("Operation successful");
@@ -506,7 +506,7 @@ static ld2420_res_t fLd2420_InitialABDThresh() {
 
   bool ConfigSuccess = true;
   Serial.println("\n>>> Sending Enter Command Mode...");
-  if(fLd2420_EnterCMDMode()) 
+  if(fLd2420_EnterCMDMode() == LD2420_RES_OK) 
   {
     Serial.println(":::: Enter Command Mode successful");
   }
@@ -514,7 +514,7 @@ static ld2420_res_t fLd2420_InitialABDThresh() {
   for(int i = 0 ; i < 16 ; i++)
   {
     //Setting upper thresh
-    if (fLd2420_SetThresh(i, upperThreshValues[i] , 1)) 
+    if (fLd2420_SetThresh(i, upperThreshValues[i] , 1) == LD2420_RES_OK) 
     {
       Serial.printf("\n:::: Set upper thresh[%d] value(%u) successful\n", i, upperThreshValues[i]);
       //Read Max Distance
@@ -529,7 +529,7 @@ static ld2420_res_t fLd2420_InitialABDThresh() {
     else 
       Serial.printf("Setting upper Thresh[%d] failed\n", i);
     //Setting lower thresh
-    if (fLd2420_SetThresh(i, lowerThreshValues[i] , 0)) 
+    if (fLd2420_SetThresh(i, lowerThreshValues[i] , 0) == LD2420_RES_OK) 
     {
       Serial.printf("\n:::: Set upper thresh[%d] value(%u) successful\n", i, lowerThreshValues[i]);
       //Read Max Distance
@@ -546,7 +546,7 @@ static ld2420_res_t fLd2420_InitialABDThresh() {
   }
   
   Serial.println("\nSending Exit Command Mode...");
-  if(fLd2420_ExitCMDMode()) {
+  if(fLd2420_ExitCMDMode() == LD2420_RES_OK) {
     Serial.println(":::: Exit Command Mode successful");
     return LD2420_RES_OK;
   } else {
